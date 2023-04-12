@@ -4,8 +4,8 @@ import { JavaScriptEvaluatorTool } from "../tools/javascript.js";
 
 const result = await runAgent({
   llm: OpenAIChat,
-  tools: [JavaScriptEvaluatorTool],
-  question: "What is the sine of 7 * 9?",
+  question:
+    "What is the difference in years between the ages of Noam Chomsky and David Cameron?",
 });
 
 console.log(result);

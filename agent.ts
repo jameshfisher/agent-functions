@@ -1,113 +1,71 @@
-import { LLM, Tool, Tools } from "./types.js";
-
-const FINAL_ANSWER_TOKEN = "Final Answer:";
-const OBSERVATION_TOKEN = "Observation:";
-const THOUGHT_TOKEN = "Thought:";
-
-// So the LLM does not hallucinate until the end
-const STOP_PATTERNS: string[] = [
-  `\n${OBSERVATION_TOKEN}`,
-  `\n\t${OBSERVATION_TOKEN}`,
-];
+import { VM } from "vm2";
+import { GoogleSearchTool } from "./tools/google.js";
+import { LLM } from "./types.js";
 
 const PROMPT_TEMPLATE = ({
-  toolDescriptions,
-  toolNames,
-  question,
+  notes,
 }: {
-  toolDescriptions: string;
-  toolNames: string;
-  question: string;
-}) => `You can use tools to get new information. Answer the question as best as you can using the following tools:
+  notes: unknown;
+}) => `You are an assistant.
+Your working memory is in a JS object called 'notes'.
+Your job is to answer the question in notes.question,
+and put the answer in notes.answer.
+You work step-by-step by choosing JS actions from the following:
 
-${toolDescriptions}
+  notes[<string>] = <string>;
+  notes[<string>] = await google(query: string);
+  delete notes[<string>];
 
-Use the following format:
+Here are some excellent examples.
 
-Question: the input question you must answer
-Thought: comment on what you want to do next
-Action: the action to take, exactly one element of [${toolNames}]
-Action Input: the input to the action
-Observation: the result of the action
-... (this Thought/Action/Action Input/Observation repeats N times, use it until you are sure of the answer)
-Thought: I now know the final answer
-Final Answer: your final answer to the original input question
+notes = { "question": "What is 94-56?" };
+notes.answer = 94-56; // Use JS to calculate this
 
-Begin!
+notes = { "question": "How old was QEII's father when he died?" };
+notes["plan"] = "Find QEII's father, then find his age at death"; // Multi-step question. Write down steps
 
-Question: ${question}
-Thought: `;
+notes = { "question": "How old is the world's most popular programming language?", "most popular programming language": "JavaScript" };
+notes["javascript invention date"] = await google("When was JavaScript invented?"); // We've found the language, but need to find its age
+
+notes = { "question": "How old was QEII's father when he died?", "plan": "Find QEII's father, then find his age at death" };
+notes["qeii's father"] = await google("What was QEII's father's name?"); // Do first step of plan
+
+notes = { "question": "How old is the world's most popular programming language?", "most popular programming language": "JavaScript", "javascript invention year": "1995", "current year": "2023" };
+notes["answer"] = (2023 - 1995) + " years"; // Calculate from numbers in notes
+
+notes = ${JSON.stringify(notes)};
+`;
 
 const MAX_LOOPS = 5;
-
-const ACTION_REGEX = /Action: [\[]?(.*?)[\]]?\n*Action Input:[\s]*(.*)/;
-
-const parse = (generated: string): [string, string] => {
-  if (generated.includes(FINAL_ANSWER_TOKEN)) {
-    return ["Final Answer", generated.split(FINAL_ANSWER_TOKEN).pop()!.trim()];
-  }
-
-  const match = generated.match(ACTION_REGEX);
-
-  if (!match) {
-    throw new Error(
-      `Output of LLM is not parsable for next tool use: '${generated}'`
-    );
-  }
-
-  const tool = match[1].trim();
-  const toolInput = match[2].trim().replace(/^"|"$/g, "");
-
-  return [tool, toolInput];
-};
-
-const toolDescriptions = (tools: Tools): string =>
-  tools.map((tool) => `${tool.name}: ${tool.description}`).join("\n");
-
-const toolNames = (tools: Tools): string =>
-  tools.map((tool) => tool.name).join(",");
-
-const buildToolsByName = (tools: Tools): Record<string, Tool> =>
-  tools.reduce((acc, tool) => ({ ...acc, [tool.name]: tool }), {});
 
 export const runAgent = async ({
   question,
   llm,
-  tools,
 }: {
   question: string;
   llm: LLM;
-  tools: Tool[];
 }): Promise<string> => {
-  const toolsByName = buildToolsByName(tools);
-
-  const previousResponses: string[] = [];
-  const prompt = PROMPT_TEMPLATE({
-    toolDescriptions: toolDescriptions(tools),
-    toolNames: toolNames(tools),
-    question: question,
+  const vm = new VM({
+    timeout: 5000,
+    allowAsync: true,
+    sandbox: {
+      notes: { question },
+      google: GoogleSearchTool.use,
+    },
   });
 
-  process.stdout.write(prompt);
-
   for (let numLoops = 0; numLoops < MAX_LOOPS; numLoops += 1) {
-    const generated = await llm(
-      prompt + previousResponses.join("\n"),
-      STOP_PATTERNS
-    );
-    const [toolName, toolInput] = parse(generated);
-    if (toolName === "Final Answer") {
-      return toolInput;
+    const prompt = PROMPT_TEMPLATE({ notes: vm.sandbox.notes });
+    const jsAction = await llm(prompt, [";"]);
+    console.log({ jsAction });
+    await vm.run(`(async () => {
+      ${jsAction};
+    })()`);
+    console.log("notes after", vm.sandbox.notes);
+    if (vm.sandbox.notes.answer) {
+      console.log({ "FINAL ANSWER": vm.sandbox.notes.answer });
+      return vm.sandbox.notes.answer;
     }
-    const tool = toolsByName[toolName];
-    if (!tool) {
-      throw new Error(`Unknown tool: ${toolName}`);
-    }
-    const toolResult = await tool.use(toolInput);
-    const generatedPlus =
-      generated + `\n${OBSERVATION_TOKEN} ${toolResult}\n${THOUGHT_TOKEN}`;
-    process.stdout.write(generatedPlus);
-    previousResponses.push(generatedPlus);
   }
 
   throw new Error(`Max loops reached: ${MAX_LOOPS}`);
