@@ -15,7 +15,9 @@ export const GoogleSearchTool: Tool = {
     });
 
     let returnVal: string;
-    if (res.answer_box?.answer) {
+    if (res.answer_box?.population) {
+      returnVal = res.answer_box.population;
+    } else if (res.answer_box?.answer) {
       returnVal = res.answer_box.answer;
     } else if (res.answer_box?.snippet) {
       returnVal = res.answer_box.snippet;
