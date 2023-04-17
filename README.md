@@ -39,24 +39,26 @@ Let's compare the "chatbot" and "function" architectures:
   By contrast, in a function architecture, the agent's memory is a data structure,
   and it can choose to forget data by manipulating it.
 
-* In a chatbot architecture, actions are strictly sequential.
+* **Concurrency.**
+  In a chatbot architecture, actions are strictly sequential.
   In a function architecture, the agent can spawn parallel tasks, and collect them with `Promise.all`.
   To express sequencing, a function agent either uses semicolon-delimited commands,
   or `Promise`-based continuations.
 
-* In a chatbot architecture, there's no natural way to spawn sub-tasks.
+* **Recursion.**
+  In a chatbot architecture, there's no natural way to spawn sub-agents.
   In a function architecture, the agent can recursively call `agent(...)` with sub-tasks.
   (This is also a way to "temporarily forget", and focus on only data relevant to a sub-task.)
 
-* In a chatbot architecture, a new syntax is invented, like `Thought:`, `Action:`, `Observation:`.
+* **Syntax.**
+  In a chatbot architecture, a new syntax is invented, like `Thought:`, `Action:`, `Observation:`.
   The syntax ends up being half-baked and prone to injection.
-  In a function architecture, the syntax is standard JavaScript.
+  In a function architecture, the syntax is standard JavaScript:
+  thoughts are comments, actions are function calls, observations are return values.
 
-* In a chatbot architecture, the agent must use a special tool like `Python` to do calculation.
+* **Code by default.**
+  In a chatbot architecture, the agent must use a special tool like `Python` to do calculation.
   In a function architecture, the agent writes code by default, e.g. `a+b` or `new Date()`.
-
-* In a chatbot architecture, the agent can think and plan with messages like `Thought:`.
-  In a function architecture, the agent uses comments.
 
 ## Issues
 
@@ -92,3 +94,6 @@ npm run start
 ## Notes
 
 * This began life as a TypeScript rewrite of [`llm_agents`, a Python library by Marc Päpper](https://github.com/mpaepper/llm_agents).
+* See [_Scaffolded LLMs as natural language computers_](https://www.beren.io/2023-04-11-Scaffolded-LLMs-natural-language-computers/)
+  a recent post by by Beren Millidge,
+  with thoughts similar to those that influenced this experiment.
