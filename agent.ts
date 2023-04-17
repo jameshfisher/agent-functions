@@ -1,12 +1,10 @@
 import { VM } from "vm2";
-import { OpenAIChat } from "./llms/openai.js";
+import { llm } from "./llm.js";
 import { GoogleSearchTool } from "./tools/google.js";
 
-const PROMPT_TEMPLATE = ({
-  task,
-}: {
-  task: unknown;
-}) => `An agent is an async JS function whose body is dynamically written by AI when invoked, e.g.:
+const PROMPT_TEMPLATE = (
+  task: unknown
+) => `\`agent\` is an async JS function whose body is dynamically written by an agent when invoked, e.g.:
 
 async agent(task: "Return ninety-four") {
   return 94;
@@ -21,12 +19,19 @@ async agent(task: { "question": "What is the second item in foo?", foo: [42, 3.1
 The task may specify a return value format, e.g.:
 
 async agent(task: { "question": "What is two times 94", "format": "string" }) {
+  // Assuming decimal notation for numeric string
   return (2 * 94).toString();
 } EOF
 
 The task may contain useful facts and planning, e.g.:
 
-async agent(task: { "question": "How old is the world's most popular programming language?", "format": "string", "most popular programming language": "JavaScript", "javascript invention year": "1995", "current year": "2023" }) {
+async agent(task: {
+  "question": "How old is the world's most popular programming language?",
+  "format": "string",
+  "most popular programming language": "JavaScript",
+  "javascript invention year": "1995",
+  "current year": "2023"
+}) {
   return \`${2023 - 1995} years\`;
 } EOF
 
@@ -39,15 +44,10 @@ async agent (task: "What was the gap in years between Jesus' death and the inven
 } EOF
 
 If the task requires external simple facts, the agent can use \`google\`.
-To parse Google responses, it must use a sub-agent, e.g.
+To parse a Google response, it must use a sub-agent, e.g.
 
 async agent(task: { question: "What year was Mohammad born?", "format": "number" }) {
-  const answer = agent({
-    question: "Parse Google answer: " + task.question,
-    googleAnswer: await google(task.question),
-    format: "number",
-  });
-  return answer;
+  return google(task.question).then(googleAnswer => agent({ ...task, googleAnswer });
 } EOF
 
 Agents may be asked to parse Google responses, e.g.
@@ -59,18 +59,12 @@ async agent(task: { question: "Parse Google answer: What year was Mohammad born?
 The agent may do async tasks concurrently, e.g.
 
 async agent(task: "What is the difference in years between the ages of Noam Chomsky and David Cameron?") {
+  // Ages can be fetched concurrently
   const [chomskyAgeYears, cameronAgeYears] = await Promise.all([
-    agent({task: "Parse Google answer: How old is Noam Chomsky in years?", "format": "number", googleAnswer: await google("How old is Noam Chomsky?") },
-    agent({task: "Parse Google answer: How old is David Cameron in years?", "format": "number", googleAnswer: await google("How old is David Cameron?") },
+    await google("How old is Noam Chomsky?").then(googleAnswer => agent({ task: "How old is Noam Chomsky in years?", "format": "number", googleAnswer }),
+    await google("How old is David Cameron?").then(googleAnswer => agent({ task: "How old is David Cameron in years?", "format": "number", googleAnswer }),
   ]);
   return Math.abs(chomskyAgeYears - cameronAgeYears);
-} EOF
-
-If the task requires a plan, the agent can write one, then call itself recursively:
-
-async agent(task: "How old was QEII's father when he died?") {
-  const plan = "Find QEII's father, then find his age at death, then subtract";
-  return agent({ task, plan, format: "number" });
 } EOF
 
 The agent must not use other APIs (e.g. fetch).
@@ -80,15 +74,10 @@ Now here's an excellent example of an agent:
 
 async agent(task: ${JSON.stringify(task)}) {`;
 
-const llm = OpenAIChat;
-
 let budget = 7;
-
 const decr = () => {
   budget--;
-  if (budget <= 0) {
-    throw new Error("Budget exceeded");
-  }
+  if (budget <= 0) throw new Error("Budget exceeded");
 };
 
 export const agent = async (task: unknown): Promise<unknown> => {
@@ -97,27 +86,28 @@ export const agent = async (task: unknown): Promise<unknown> => {
     timeout: 5000,
     allowAsync: true,
     sandbox: {
-      task,
       google: async (q: unknown) => {
         decr();
         if (typeof q !== "string") throw new Error("google() expects a string");
         console.log("google", q);
         const res = await GoogleSearchTool.use(q);
-        console.log("google res", res);
+        console.log("google result", res);
         return res;
       },
       agent, // recursive call
     },
   });
 
-  const prompt = PROMPT_TEMPLATE({ task: vm.sandbox.task });
-  console.log({ prompt });
-  const jsFnBodyAndCloseBrace = await llm(prompt, ["EOF"]);
-  console.log({ jsFnBody: jsFnBodyAndCloseBrace });
-  const answer = await vm.run(`(async () => {
-    const task = ${JSON.stringify(task)};
-    ${jsFnBodyAndCloseBrace}
-  )()`);
+  const prompt = PROMPT_TEMPLATE(task);
+  console.log("task =", task);
+  const jsFnBodyAndCloseBrace = await llm(prompt, ["EOF"]); // EOF is a hack. Ideally, we'd stop on a balanced brace.
+  console.log(`async (task) => {
+    ${jsFnBodyAndCloseBrace}`);
+  const answer = await vm.run(
+    `(async () => { const task = ${JSON.stringify(
+      task
+    )}; ${jsFnBodyAndCloseBrace} )()`
+  );
   console.log({ answer });
   return answer;
 };

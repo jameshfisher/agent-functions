@@ -1,12 +1,11 @@
 import { Configuration, OpenAIApi } from "openai";
-import { LLM } from "../types.js";
 
 const configuration = new Configuration({
   apiKey: process.env.OPENAI_API_KEY,
 });
 const openai = new OpenAIApi(configuration);
 
-export const OpenAIChat: LLM = async (
+export const llm = async (
   prompt: string,
   stop: string[] | undefined = undefined
 ): Promise<string> => {

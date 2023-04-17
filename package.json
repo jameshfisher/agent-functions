@@ -1,7 +1,6 @@
 {
-  "name": "llm-agents",
-  "version": "0.0.1",
-  "description": "TypeScript conversion of https://github.com/mpaepper/llm_agents",
+  "name": "llm-function-agents",
+  "version": "0.0.2",
   "scripts": {
     "build": "tsc",
     "start": "source .env && node dist/examples/runAgent.js"

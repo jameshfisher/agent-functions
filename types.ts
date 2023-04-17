@@ -1,5 +1,3 @@
-export type LLM = (prompt: string, stop?: string[]) => Promise<string>;
-
 export type Tool = {
   name: string;
   description: string;
