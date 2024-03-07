@@ -4,73 +4,62 @@ import { GoogleSearchTool } from "./tools/google.js";
 
 const PROMPT_TEMPLATE = (
   task: unknown
-) => `\`agent\` is an async JS function whose body is dynamically written by an agent when invoked, e.g.:
-
-async agent(task: "Return ninety-four") {
-  return 94;
-} EOF
-
-The task may be a JSON object, e.g.:
-
-async agent(task: { "question": "What is the second item in foo?", foo: [42, 3.14, null] }) {
-  return task.foo[1];
-} EOF
-
-The task may specify a return value format, e.g.:
+) => `\`agent\` is an async JS function whose body is dynamically written by an agent when invoked.
+There are four options for how an agent can complete a task.
+Option 1, answering immediately:
 
 async agent(task: { "question": "What is two times 94", "format": "string" }) {
-  // Assuming decimal notation for numeric string
+  // All information needed to answer is in the task
   return (2 * 94).toString();
 } EOF
 
-The task may contain useful facts and planning, e.g.:
+Option 2, summarize and simplify the task, returning a continuation agent:
 
 async agent(task: {
   "question": "How old is the world's most popular programming language?",
-  "format": "string",
-  "most popular programming language": "JavaScript",
-  "javascript invention year": "1995",
-  "current year": "2023"
+  "format": "number",
+  "most popular programming language": "JavaScript"
 }) {
-  return \`${2023 - 1995} years\`;
+  // Simplify task: forget 'most popular programming language'
+  return agent({ "question": "How old is JavaScript in years?", "format": "number" });
 } EOF
 
-If completing a task requires sequential steps, the agent can invoke sub-agents, e.g.:
+Option 3, ask Google, returning a continuation agent:
 
-async agent (task: "What was the gap in years between Jesus' death and the invention of the printing press?") {
-  const jesusDeathYear = await agent({ question: "What year did Jesus die?", "format": "number" });
-  const inventionOfPrintingPressYear = await agent({ question: "In what year was the printing press invented", "format": "number" });
-  return inventionOfPrintingPressYear - jesusDeathYear;
+async agent(task: { "question": "What year was Mohammad born?", "format": "number" }) {
+  // Use Google to find an answer
+  const googleResponse = await google(task.question);
+  // Google response has unknown syntax, so return a continuation agent to parse it
+  return agent({ ...task, ["Google response to: " + task.question]: googleResponse });
 } EOF
 
-If the task requires external simple facts, the agent can use \`google\`.
-To parse a Google response, it must use a sub-agent, e.g.
+Option 4, run sub-tasks concurrently, returning a continuation agent:
 
-async agent(task: { question: "What year was Mohammad born?", "format": "number" }) {
-  return google(task.question).then(googleAnswer => agent({ ...task, googleAnswer });
-} EOF
-
-Agents may be asked to parse Google responses, e.g.
-
-async agent(task: { question: "Parse Google answer: What year was Mohammad born?", "format": "number", "googleAnswer": "Mohammad was born in 570 CE." }) {
-  return 570;
-} EOF
-
-The agent may do async tasks concurrently, e.g.
-
-async agent(task: "What is the difference in years between the ages of Noam Chomsky and David Cameron?") {
-  // Ages can be fetched concurrently
-  const [chomskyAgeYears, cameronAgeYears] = await Promise.all([
-    await google("How old is Noam Chomsky?").then(googleAnswer => agent({ task: "How old is Noam Chomsky in years?", "format": "number", googleAnswer }),
-    await google("How old is David Cameron?").then(googleAnswer => agent({ task: "How old is David Cameron in years?", "format": "number", googleAnswer }),
+async agent(task: { "question": "What is the difference in years between the ages of Noam Chomsky and David Cameron?" }) {
+  // Use Google to find answers
+  const [noamChomskyDescription, davidCameronDescription] = await Promise.all([
+    google("When was Noam Chomsky born?"),
+    google("When was David Cameron born?"),
   ]);
-  return Math.abs(chomskyAgeYears - cameronAgeYears);
+  // Return continuation agent to parse the Google responses
+  return agent({ ...task, "Noam Chomsky born on": noamChomskyDescription, "David Cameron born on" : davidCameronDescription });
 } EOF
 
-The agent must not use other APIs (e.g. fetch).
-The agent must not use regexes for parsing responses; it must use a sub-agent.
+It must not use other APIs or libraries (e.g. fetch).
+Google responses must never be parsed, but instead passed to a continuation agent.
+It must not deviate from the four options above.
 
-Now here's an excellent example of an agent:
+Now here are some excellent agent examples:
+
+async agent(task: { question: 'Population of USA except for Texas', format: 'number' }) {
+  // Use Google to find answers
+  const [usaPopulationDescription, texasPopulationDescription] = await Promise.all([
+    google("Population of USA"),
+    google("Population of Texas"),
+  ]);
+  // Return continuation agent to parse the Google responses
+  return agent({ ...task, usaPopulationDescription, texasPopulationDescription });
+} EOF
 
 async agent(task: ${JSON.stringify(task)}) {`;
 

@@ -1,7 +1,7 @@
 import { agent } from "../agent.js";
 
 const result = await agent({
-  question: "Population of USA except for Texas",
+  question: "Number of COVID-19 cases in the world right now",
   format: "number",
 });
 
